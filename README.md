@@ -1,2 +1,2 @@
 # e-dan
-suivi de consommation d'électricité 
+app conso edan menage
