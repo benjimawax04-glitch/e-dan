@@ -9,6 +9,8 @@ export default function Home() {
   const [currentKwh, setCurrentKwh] = useState(null);
   const [power, setPower] = useState(0.34);
   const [showTicketPanel, setShowTicketPanel] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   const formatTime = (sec) => {
     if (!isFinite(sec)) return '--:--:--';
@@ -17,6 +19,16 @@ export default function Home() {
     const s = Math.floor(sec % 60);
     return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
   };
+
+  // Détecte le rendu côté client pour éviter les erreurs avec `window`
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window === 'undefined') return;
+    const handleResize = () => setIsDesktop(window.innerWidth >= 768);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -54,6 +66,8 @@ export default function Home() {
   const hoursLeft = remainingKwh / power;
   const daysLeft = hoursLeft / 24;
 
+  if (!mounted) return null; // empêche le rendu côté serveur
+
   return (
     <div className="container py-5" style={{ background: 'linear-gradient(to right, #00c6ff, #0072ff)', minHeight: '100vh', color: '#fff' }}>
       <div className="text-center mb-5">
@@ -69,10 +83,10 @@ export default function Home() {
               color: '#000',
               border: '2px solid #0072ff',
               overflow: 'hidden',
-              maxHeight: showTicketPanel || window.innerWidth >= 768 ? '1000px' : '0',
+              maxHeight: showTicketPanel || isDesktop ? '1000px' : '0',
               transition: 'max-height 0.5s ease-in-out, opacity 0.5s ease-in-out',
-              opacity: showTicketPanel || window.innerWidth >= 768 ? 1 : 0,
-              padding: showTicketPanel || window.innerWidth >= 768 ? '1.5rem' : '0',
+              opacity: showTicketPanel || isDesktop ? 1 : 0,
+              padding: showTicketPanel || isDesktop ? '1.5rem' : '0',
               background: '#fff',
               borderRadius: '0.5rem'
             }}>
