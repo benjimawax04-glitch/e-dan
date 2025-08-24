@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import { db, sessionsCollection } from '../firebase';
+import { addDoc, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 
 export default function Home() {
   const BASE_AMOUNT = 2000;
@@ -20,7 +22,6 @@ export default function Home() {
     return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
   };
 
-  // Détecte le rendu côté client pour éviter les erreurs avec `window`
   useEffect(() => {
     setMounted(true);
     if (typeof window === 'undefined') return;
@@ -30,31 +31,46 @@ export default function Home() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Récupération en temps réel des sessions depuis Firebase
+  useEffect(() => {
+    const unsubscribe = onSnapshot(sessionsCollection, snapshot => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setSessions(data);
+    });
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     const interval = setInterval(() => {
-      setSessions(prev => prev.map(s => {
-        if (!s.running) return s;
+      sessions.forEach(async (s) => {
+        if (!s.running) return;
         const newKwh = Math.max(0, s.kwhRemaining - power / 3600);
-        return { ...s, kwhRemaining: newKwh, running: newKwh > 0, lastUpdate: new Date() };
-      }));
+        const docRef = doc(db, 'sessions', s.id);
+        await updateDoc(docRef, { kwhRemaining: newKwh, running: newKwh > 0, lastUpdate: new Date() });
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [power]);
+  }, [power, sessions]);
 
-  const addTicket = () => {
+  const addTicket = async () => {
     const computedKwh = currentKwh !== null ? currentKwh : (amount / BASE_AMOUNT) * BASE_KWH;
     const now = new Date();
-    setSessions(prev => [...prev, { id: Date.now(), amountFcfa: amount, kwhStart: computedKwh, kwhRemaining: computedKwh, running: true, startTime: now, lastUpdate: now }]);
+    await addDoc(sessionsCollection, { amountFcfa: amount, kwhStart: computedKwh, kwhRemaining: computedKwh, running: true, startTime: now, lastUpdate: now });
     setCurrentKwh(computedKwh);
   };
 
-  const updateCurrentKwh = () => {
+  const updateCurrentKwh = async () => {
     if (currentKwh === null || sessions.length === 0) return;
-    const now = new Date();
-    setSessions(prev => prev.map((s, idx) => idx === prev.length - 1 ? { ...s, kwhRemaining: currentKwh, kwhStart: currentKwh, startTime: now, lastUpdate: now } : s));
+    const lastSession = sessions[sessions.length - 1];
+    const docRef = doc(db, 'sessions', lastSession.id);
+    await updateDoc(docRef, { kwhRemaining: currentKwh, kwhStart: currentKwh, lastUpdate: new Date() });
   };
 
   const resetSessions = () => {
+    sessions.forEach(async (s) => {
+      const docRef = doc(db, 'sessions', s.id);
+      await updateDoc(docRef, { running: false });
+    });
     setSessions([]);
     setCurrentKwh(null);
     setAmount(BASE_AMOUNT);
@@ -66,7 +82,7 @@ export default function Home() {
   const hoursLeft = remainingKwh / power;
   const daysLeft = hoursLeft / 24;
 
-  if (!mounted) return null; // empêche le rendu côté serveur
+  if (!mounted) return null;
 
   return (
     <div className="container py-5" style={{ background: 'linear-gradient(to right, #00c6ff, #0072ff)', minHeight: '100vh', color: '#fff' }}>
